@@ -1,0 +1,28 @@
+# Configuration for demo.
+cache_size_mb=250,
+duration_seconds=5,
+operation_tracker=
+(
+    # Timestamp
+    tracking_key_format=Q,
+    # Operation type, Table name
+    tracking_value_format=QS
+),
+timestamp_manager=
+(
+),
+workload_manager=
+(
+    checkpoint_config=
+    (
+    ),
+    custom_config=
+    (
+    ),
+    insert_config=
+    (
+    ),
+    populate_config=
+    (
+    ),
+)

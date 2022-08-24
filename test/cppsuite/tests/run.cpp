@@ -46,6 +46,7 @@
 #include "search_near_02.cpp"
 #include "search_near_03.cpp"
 #include "test_template.cpp"
+#include "demo.cpp"
 
 extern "C" {
 #include "test_util.h"
@@ -156,6 +157,8 @@ run_test(const std::string &test_name, const std::string &config, const std::str
         search_near_03(args).run();
     else if (test_name == "test_template")
         test_template(args).run();
+    else if (test_name == "demo")
+        demo(args).run();
     else {
         test_harness::logger::log_msg(LOG_ERROR, "Test not found: " + test_name);
         error_code = -1;
@@ -178,7 +181,7 @@ main(int argc, char *argv[])
 {
     std::string cfg, config_filename, current_cfg, current_test_name, test_name, wt_open_config;
     int64_t error_code = 0;
-    const std::vector<std::string> all_tests = {"bounded_cursor_perf", "burst_inserts",
+    const std::vector<std::string> all_tests = {"demo", "bounded_cursor_perf", "burst_inserts",
       "cache_resize", "cursor_bound_01", "cursor_bound_02", "cursor_bound_03", "cursor_bound_04",
       "hs_cleanup", "operations_test", "search_near_01", "search_near_02", "search_near_03",
       "test_template"};
