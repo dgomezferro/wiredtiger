@@ -28,7 +28,10 @@
 
 #include "src/common/constants.h"
 #include "src/common/logger.h"
+#include "src/common/random_generator.h"
 #include "src/main/test.h"
+
+#include <iostream>
 
 namespace test_harness {
 /* Defines what data is written to the tracking table for use in custom validation. */
@@ -68,35 +71,11 @@ class demo : public test {
           _config->get_bool(COMPRESSION_ENABLED), *_timestamp_manager));
     }
 
-    /*
-     * Remove the unecessary:
-     *  Anything that does not need to be customised can be removed from this class. When removed,
-     * the default implementation is used. The function `run` can removed and probably a few more :)
-     */
-    void
-    run() override final
-    {
-        /* You can remove the call to the base class to fully customize your test. */
-        test::run();
-    }
-
-    void
-    populate(database &, timestamp_manager *, configuration *, operation_tracker *) override final
-    {
-        logger::log_msg(LOG_WARN, "populate: nothing done");
-    }
-
-    void
-    checkpoint_operation(thread_worker *) override final
-    {
-        logger::log_msg(LOG_WARN, "checkpoint_operation: nothing done");
-    }
-
     void
     custom_operation(thread_worker *tw) override final
     {
         /* Define the length of the table name. */
-        // TODO
+        const std::size_t name_length = 20;
 
         /* While the test is running. */
         while (tw->running()) {
@@ -106,7 +85,8 @@ class demo : public test {
              *  Using the `random_generator` class, generate a name that has the right number of
              * characters.
              */
-            // TODO
+            const std::string table_name =
+              "table:" + random_generator::instance().generate_pseudo_random_string(name_length);
 
             /*
              * Create the new table:
@@ -114,22 +94,22 @@ class demo : public test {
              * `scoped_session` that wraps around the C type `WT_SESSION`. It is possible to access
              * the underlying C type using the `->` or `get()`. Once you have access to the
              * `WT_SESSION`, simply use the `create` function.
-             *  Note that the C API uses `const char*` and not `string`, use the `c_str()` function to do the conversion.
              */
-            if (tw->session->create(tw->session.get(), <table_name>, NULL) != 0)
+            if (tw->session->create(tw->session.get(), table_name.c_str(), NULL) != 0)
                 /*
-                 * Failure, log some error:
+                 * Log some error:
                  *  Again, using the `logger` class, generate some trace to indicate an error.
                  */
-                // TODO
+                logger::log_msg(
+                  LOG_ERROR, "The following table could not be create: " + table_name);
             else {
                 /*
-                 * Success, log some debugging trace:
+                 * Log some debugging trace:
                  *  It is also great to add traces when things go right. Use the severity level
                  * `LOG_TRACE` to indicate a new table has been created. Make sure the table name
                  * appears in the message.
                  */
-                // TODO
+                logger::log_msg(LOG_TRACE, "The following table was created: " + table_name);
 
                 /*
                  * TRACKING SECTION: BEGIN.
@@ -147,7 +127,7 @@ class demo : public test {
                  * function.
                  */
                 const wt_timestamp_t ts = tw->tsm->get_next_ts();
-                const std::string value = <table_name>;
+                const std::string value = table_name;
 
                 /* Start a transaction. */
                 tw->txn.begin();
@@ -168,7 +148,7 @@ class demo : public test {
                 /* Otherwise, handle error. */
                 else {
                     logger::log_msg(
-                      LOG_ERROR, "Custom operation could not be saved for table: " + <table_name>);
+                      LOG_ERROR, "Custom operation could not be saved for table: " + table_name);
                     tw->txn.rollback();
                 }
                 /* TRACKING SECTION: END. */
@@ -188,13 +168,13 @@ class demo : public test {
          *  The method `get_collection_count()` retrieves the number of collections currently in the
          * database.
          */
-        // TODO
+        const uint64_t collection_count = tw->db.get_collection_count();
 
         /*
          * Make sure we have at least a collection to work on:
          *  The macro `testutil_assert()` could be useful.
          */
-        // TODO
+        testutil_assert(collection_count > 0);
 
         /*
          * Retrieve a random collection:
@@ -202,7 +182,7 @@ class demo : public test {
          * `get_random_collection()`. It returns a *reference* to a random collection from the
          * database.
          */
-        // TODO
+        collection &coll = tw->db.get_random_collection();
 
         /*
          * Open a cursor on the collection:
@@ -210,7 +190,7 @@ class demo : public test {
          * use the `open_scoped_cursor()` function accessible through the `session` object contained
          * within the `thread_worker` object.
          */
-        // TODO
+        scoped_cursor cursor = tw->session.open_scoped_cursor(coll.name);
 
         /* While the test is running. */
         while (tw->running()) {
@@ -221,7 +201,10 @@ class demo : public test {
              * it, call `random_generator::instance()` and use the function of your choice. Note
              * that the framework only handles string for keys and values.
              */
-            // TODO
+            const std::string key =
+              random_generator::instance().generate_pseudo_random_string(tw->key_size);
+            const std::string value =
+              random_generator::instance().generate_pseudo_random_string(tw->value_size);
 
             /*
              * Start a txn if not started yet:
@@ -230,37 +213,37 @@ class demo : public test {
              * `try_begin` that starts the transaction if it is not active yet.
              * This will make more sense when we will get to the commit part.
              */
-            // TODO
+            tw->txn.try_begin();
 
             /*
              * Perform the insertion:
              *  The `thread_worker` object can call the `insert` function to perform an insertion.
              *  Note that it returns a boolean.
              */
-            // TODO
-            if () {
+            if (tw->insert(cursor, coll.id, key, value)) {
                 /*
-                 * Success, try to commit:
+                 * Try to commit:
                  *  We can try to commit using the `can_commit` function of the `txn` object. The
                  * `can_commit` function checks if we have done enough operations within the current
                  * transaction.
                  *  The function `can_commit` returns a boolean. If this is `true`, the transaction
-                 * is ready to be committed and this can be done using the `commit` function. We can ignore the result of the `commit` function using the macro `WT_IGNORE_RET_BOOL`.
+                 * is ready to be committed and this can be done using the `commit` function.
                  */
-                // TODO
+                if (tw->txn.can_commit())
+                    WT_IGNORE_RET_BOOL(tw->txn.commit());
             }
+            /*
+             * Handle error:
+             *  The insertion might fail and `insert` returns `false` if this is the case. It is the
+             * right place to handle the error. Call the `rollback` function using the `txn` object.
+             * It would also be great to log some traces and this can be done using the `logger`
+             * class. A message can be generated using `logger::log_msg` and then the severity level
+             * needs to be specified as well as the message. The different levels are defined in
+             * `logger.h`.
+             */
             else {
-                /*
-                * Failure, handle error:
-                *  The insertion might fail and `insert` returns `false` if this is the case. It is the
-                * right place to handle the error. Call the `rollback` function using the `txn` object.
-                * It would also be great to log some traces and this can be done using the `logger`
-                * class. A message can be generated using `logger::log_msg` and then the severity level
-                * needs to be specified as well as the message. The different levels are defined in
-                * `logger.h`.
-                */
                 logger::log_msg(LOG_ERROR, "Insertions failed.");
-                // TODO
+                tw->txn.rollback();
             }
 
             /*
@@ -281,24 +264,6 @@ class demo : public test {
     }
 
     void
-    read_operation(thread_worker *) override final
-    {
-        logger::log_msg(LOG_WARN, "read_operation: nothing done");
-    }
-
-    void
-    remove_operation(thread_worker *) override final
-    {
-        logger::log_msg(LOG_WARN, "remove_operation: nothing done");
-    }
-
-    void
-    update_operation(thread_worker *) override final
-    {
-        logger::log_msg(LOG_WARN, "update_operation: nothing done");
-    }
-
-    void
     validate(
       const std::string &operation_table_name, const std::string &, database &) override final
     {
@@ -307,13 +272,13 @@ class demo : public test {
          * function to create a new `scoped_session` is
          * `connection_manager::instance().create_session()`.
          */
-        // TODO
+        scoped_session session = connection_manager::instance().create_session();
 
         /* Open a new cursor:
          *  Use the newly created `scoped_session` to create a `scoped_cursor` using the
          * `open_scoped_cursor` function.
          */
-        // TODO
+        scoped_cursor cursor = session.open_scoped_cursor(operation_table_name);
 
         /*
          * We will need to keep track of some return values and the number of collections, we can
@@ -328,15 +293,15 @@ class demo : public test {
          * cursor. Similarly to the `scoped_session`, in order to have access to the underlying
          * `WT_CURSOR` of a `scoped_cursor`, use the `->` or `get()`.
          */
-        while ((ret = <cursor>->next(<cursor>.get())) == 0) {
+        while ((ret = cursor->next(cursor.get())) == 0) {
 
             /* Components stored in the tracking table, */
             uint64_t tracked_ts;
             char *tracked_table_name;
             uint64_t tracked_op_type;
 
-            testutil_check(<cursor>->get_key(<cursor>.get(), &tracked_ts));
-            testutil_check(<cursor>->get_value(<cursor>.get(), &tracked_op_type, &tracked_table_name));
+            testutil_check(cursor->get_key(cursor.get(), &tracked_ts));
+            testutil_check(cursor->get_value(cursor.get(), &tracked_op_type, &tracked_table_name));
 
             /* We are only looking for records from the custom_operation() function. */
             tracking_operation op_type = static_cast<tracking_operation>(tracked_op_type);

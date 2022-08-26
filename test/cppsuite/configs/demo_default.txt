@@ -10,19 +10,33 @@ operation_tracker=
 ),
 timestamp_manager=
 (
+    enabled=true,
+    oldest_lag=10,
+    stable_lag=10
 ),
 workload_manager=
 (
     checkpoint_config=
     (
+        op_rate=10s,
     ),
     custom_config=
     (
+        op_rate=1s,
+        thread_count=1
     ),
     insert_config=
     (
+        key_size=10,
+        op_rate=1s,
+        ops_per_transaction=(max=5,min=1),
+        thread_count=10,
+        value_size=10
     ),
     populate_config=
     (
+        collection_count=100,
+        key_count_per_collection=0,
+        thread_count=50,
     ),
 )
