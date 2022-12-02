@@ -301,11 +301,15 @@ struct Operation {
     std::vector<Operation> *_group;
     int _repeatgroup;
     double _timed;
+    bool _random_table;
 
     Operation();
     Operation(OpType optype, Table table, Key key, Value value);
     Operation(OpType optype, Table table, Key key);
     Operation(OpType optype, Table table);
+    // Operation on a random table
+    // Operation(OpType optype);
+    Operation(OpType optype, Key key, Value value);
     // Constructor with string applies to NOOP, SLEEP, CHECKPOINT
     Operation(OpType optype, const std::string& config);
     Operation(const Operation &other);

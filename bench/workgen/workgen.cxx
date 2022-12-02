@@ -686,6 +686,7 @@ ThreadRunner::ThreadRunner()
 
 ThreadRunner::~ThreadRunner()
 {
+    std::cout << "Destructor ThreadRunner" << std::endl;
     free_all();
 }
 
@@ -704,9 +705,14 @@ ThreadRunner::create_all(WT_CONNECTION *conn)
     _throttle_limit = 0;
     _in_transaction = 0;
 
+    bool random_table = _thread->_op._random_table;
+
+    // size_t keysize = random_table ? 40 : 1;
+    // size_t valuesize = random_table ? 40 : 1;
     size_t keysize = 1;
     size_t valuesize = 1;
     op_create_all(&_thread->_op, keysize, valuesize);
+    std::cout << "keysize " << keysize << " valuesize " << valuesize << std::endl;
     _keybuf = new char[keysize];
     _valuebuf = new char[valuesize];
     _keybuf[keysize - 1] = '\0';
@@ -753,6 +759,7 @@ ThreadRunner::free_all()
         _rand_state = nullptr;
     }
     if (_keybuf != nullptr) {
+        std::cout << "_keybuf not null: " << _keybuf << std::endl;
         delete _keybuf;
         _keybuf = nullptr;
     }
@@ -760,6 +767,7 @@ ThreadRunner::free_all()
         delete _valuebuf;
         _valuebuf = nullptr;
     }
+    std::cout << "Done ThreadRunner::free_all" << std::endl;
 }
 
 int
@@ -832,7 +840,18 @@ void
 ThreadRunner::op_create_all(Operation *op, size_t &keysize, size_t &valuesize)
 {
     op->create_all();
+
+    // Nothing else to do anymore?
+    // if(op->_random_table) return;
+
     if (op->is_table_op()) {
+        // Need to select a random table
+        // std::cout << "need to select a random table, current table is " << op->_table._uri
+        //           << std::endl;
+        // for (const auto& kv : _icontext->_table_names) {
+        //     std::cout << kv.first << ":" << kv.second << std::endl;
+        // }
+
         op->kv_compute_max(true, false);
         if (OP_HAS_VALUE(op))
             op->kv_compute_max(false, op->_table.options.random_value);
@@ -847,30 +866,33 @@ ThreadRunner::op_create_all(Operation *op, size_t &keysize, size_t &valuesize)
           op->_table._internal->_context_count != _icontext->_context_count)
             THROW("multiple Contexts not supported");
 
-        tint_t tint;
-        if ((tint = op->_table._internal->_tint) == 0) {
-            std::string uri = op->_table._uri;
+        // If random table, no uri yet.
+        if (!op->_random_table) {
+            tint_t tint;
+            if (!op->_random_table && (tint = op->_table._internal->_tint) == 0) {
+                std::string uri = op->_table._uri;
 
-            // We are single threaded in this function, so do not have
-            // to worry about locking.
-            {
-                const std::lock_guard<std::mutex> lock(_wrunner->_mutex);
-                if (_icontext->_tint.count(uri) == 0) {
-                    // TODO: don't use atomic add, it's overkill.
-                    tint = workgen_atomic_add32(&_icontext->_tint_last, 1);
-                    _icontext->_tint[uri] = tint;
-                    _icontext->_table_names[tint] = uri;
-                } else
-                    tint = _icontext->_tint[uri];
+                // We are single threaded in this function, so do not have
+                // to worry about locking.
+                {
+                    const std::lock_guard<std::mutex> lock(_wrunner->_mutex);
+                    if (_icontext->_tint.count(uri) == 0) {
+                        // TODO: don't use atomic add, it's overkill.
+                        tint = workgen_atomic_add32(&_icontext->_tint_last, 1);
+                        _icontext->_tint[uri] = tint;
+                        _icontext->_table_names[tint] = uri;
+                    } else
+                        tint = _icontext->_tint[uri];
+                }
+                op->_table._internal->_tint = tint;
             }
-            op->_table._internal->_tint = tint;
+            uint32_t usage_flags = CONTAINER_VALUE(_table_usage, op->_table._internal->_tint, 0);
+            if (op->_optype == Operation::OP_SEARCH)
+                usage_flags |= ThreadRunner::USAGE_READ;
+            else
+                usage_flags |= ThreadRunner::USAGE_WRITE;
+            _table_usage[op->_table._internal->_tint] = usage_flags;
         }
-        uint32_t usage_flags = CONTAINER_VALUE(_table_usage, op->_table._internal->_tint, 0);
-        if (op->_optype == Operation::OP_SEARCH)
-            usage_flags |= ThreadRunner::USAGE_READ;
-        else
-            usage_flags |= ThreadRunner::USAGE_WRITE;
-        _table_usage[op->_table._internal->_tint] = usage_flags;
     }
     if (op->_group != nullptr)
         for (std::vector<Operation>::iterator i = op->_group->begin(); i != op->_group->end(); i++)
@@ -938,7 +960,7 @@ int
 ThreadRunner::op_run(Operation *op)
 {
     Track *track;
-    tint_t tint = op->_table._internal->_tint;
+    tint_t tint;
     WT_CURSOR *cursor;
     WT_ITEM item;
     WT_DECL_RET;
@@ -948,6 +970,7 @@ ThreadRunner::op_run(Operation *op)
     timespec start_time;
     uint64_t time_us;
     char buf[BUF_SIZE];
+    std::string table_uri;
 
     WT_CLEAR(item);
     track = nullptr;
@@ -970,6 +993,29 @@ ThreadRunner::op_run(Operation *op)
         if (op->is_table_op())
             ++_throttle_ops;
     }
+
+    if(op->_random_table) {
+        size_t num_tables = _icontext->_table_names.size();
+        std::cout << "inside op_run need to select a random table among " << num_tables << std::endl;
+        sleep(1);
+
+        if(num_tables == 0) {
+            std::cout << "No tables, skipping!" << std::endl;
+            goto err;
+        }
+
+        for (const auto& kv : _icontext->_table_names) {
+            std::cout << kv.first << ":" << kv.second << std::endl;
+        }
+
+        tint = (random_value() % num_tables) + 1;
+        table_uri = _icontext->_table_names[tint];
+        std::cout << "selected idx is " << tint << " which is table: " << table_uri << std::endl;
+    } else {
+        tint = op->_table._internal->_tint;
+        table_uri = op->_table._uri;
+    }
+
 
     // A potential race: thread1 is inserting, and increments
     // Context->_recno[] for fileX.wt. thread2 is doing one of
@@ -1012,8 +1058,8 @@ ThreadRunner::op_run(Operation *op)
         recno = 0;
         break;
     }
-    if ((op->_internal->_flags & WORKGEN_OP_REOPEN) != 0) {
-        WT_ERR(_session->open_cursor(_session, op->_table._uri.c_str(), nullptr, nullptr, &cursor));
+    if (op->_random_table || ((op->_internal->_flags & WORKGEN_OP_REOPEN) != 0)) {
+        WT_ERR(_session->open_cursor(_session, table_uri.c_str(), nullptr, nullptr, &cursor));
         own_cursor = true;
     } else
         cursor = _cursors[tint];
@@ -1021,7 +1067,7 @@ ThreadRunner::op_run(Operation *op)
     measure_latency = track != nullptr && track->ops != 0 && track->track_latency() &&
       (track->ops % _workload->options.sample_rate == 0);
 
-    VERBOSE(*this, "OP " << op->_optype << " " << op->_table._uri.c_str() << ", recno=" << recno);
+    VERBOSE(*this, "OP " << op->_optype << " " << table_uri.c_str() << ", recno=" << recno);
     uint64_t start;
     if (measure_latency)
         workgen_clock(&start);
@@ -1035,6 +1081,7 @@ ThreadRunner::op_run(Operation *op)
     // be retried.
     if (op->is_table_op()) {
         op->kv_gen(this, true, 100, recno, _keybuf);
+        std::cout << "Key buf is " << _keybuf << std::endl;
         const std::string key_format(cursor->key_format);
         if (key_format == "S") {
             cursor->set_key(cursor, _keybuf);
@@ -1046,8 +1093,10 @@ ThreadRunner::op_run(Operation *op)
             THROW("The key format ('" << key_format << "') must be 'u' or 'S'.");
         }
         if (OP_HAS_VALUE(op)) {
-            uint64_t compressibility =
-              op->_table.options.random_value ? 0 : op->_table.options.value_compressibility;
+            uint64_t compressibility = 0;
+            if(!op->_random_table)
+                compressibility =
+                  op->_table.options.random_value ? 0 : op->_table.options.value_compressibility;
             op->kv_gen(this, false, compressibility, recno, _valuebuf);
             const std::string value_format(cursor->value_format);
             if (value_format == "S") {
@@ -1365,32 +1414,53 @@ Operation::Operation()
 
 Operation::Operation(OpType optype, Table table, Key key, Value value)
     : _optype(optype), _internal(nullptr), _table(table), _key(key), _value(value), _config(),
-      transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0)
+      transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0), _random_table(false)
 {
+    ASSERT(is_table_op());
     init_internal(nullptr);
     size_check();
 }
 
+Operation::Operation(OpType optype, Key key, Value value)
+    : _optype(optype), _internal(nullptr), _table(), _key(key), _value(value), _config(),
+      transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0), _random_table(true)
+{
+    ASSERT(is_table_op());
+    std::cout << "Inside constructor of operation on random tables" << std::endl;
+    init_internal(nullptr);
+}
+
 Operation::Operation(OpType optype, Table table, Key key)
     : _optype(optype), _internal(nullptr), _table(table), _key(key), _value(), _config(),
-      transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0)
+      transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0), _random_table(false)
 {
+    ASSERT(is_table_op());
     init_internal(nullptr);
     size_check();
 }
 
 Operation::Operation(OpType optype, Table table)
     : _optype(optype), _internal(nullptr), _table(table), _key(), _value(), _config(),
-      transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0)
+      transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0), _random_table(false)
 {
     init_internal(nullptr);
     size_check();
 }
 
+// Operation::Operation(OpType optype)
+//     : _optype(optype), _internal(nullptr), _table(), _key(), _value(), _config(),
+//       transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0), _random_table(true)
+// {
+    // TODO assert the operation type
+//     std::cout << "here" << std::endl;
+//     init_internal(nullptr);
+// }
+
 Operation::Operation(const Operation &other)
     : _optype(other._optype), _internal(nullptr), _table(other._table), _key(other._key),
       _value(other._value), _config(other._config), transaction(other.transaction),
-      _group(other._group), _repeatgroup(other._repeatgroup), _timed(other._timed)
+      _group(other._group), _repeatgroup(other._repeatgroup), _timed(other._timed),
+      _random_table(other._random_table)
 {
     // Creation and destruction of _group and transaction is managed
     // by Python.
@@ -1401,6 +1471,7 @@ Operation::Operation(OpType optype, const std::string &config)
     : _optype(optype), _internal(nullptr), _table(), _key(), _value(), _config(config),
       transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0)
 {
+    ASSERT(!is_table_op());
     init_internal(nullptr);
 }
 
@@ -1480,9 +1551,11 @@ Operation::combinable() const
 void
 Operation::create_all()
 {
+    std::cout << "Inside create all" << std::endl;
     size_check();
 
     _internal->_flags = 0;
+    std::cout << "Calling parse_config with config: " << _config << std::endl;
     _internal->parse_config(_config);
 }
 
@@ -1564,9 +1637,21 @@ Operation::kv_compute_max(bool iskey, bool has_random)
     ASSERT(is_table_op());
     TableOperationInternal *internal = static_cast<TableOperationInternal *>(_internal);
 
+    // Need to revisit this part if the key / value are not set in the case of random table.
+    // int size;
+    // if(_random_table) {
+    //     size = iskey ? 2 : 1;
+    // } else {
+    //     size = iskey ? _key._size : _value._size;
+    //     // Fallback on the table options.
+    //     if (size == 0) {
+    //         size = iskey ? _table.options.key_size : _table.options.value_size;
+    //     }
+    // }
     int size = iskey ? _key._size : _value._size;
     if (size == 0)
         size = iskey ? _table.options.key_size : _table.options.value_size;
+    std::cout << "Size is " << size << std::endl;
 
     if (iskey && size < 2)
         THROW("Key.size too small for table '" << _table._uri << "'");
@@ -1616,10 +1701,20 @@ Operation::kv_gen(
 
     uint_t size = iskey ? internal->_keysize : internal->_valuesize;
     uint_t max = iskey ? internal->_keymax : internal->_valuemax;
+
+    // Revisit if no key / value
+    // if(_random_table) {
+    //     std::cout << "kv_gen - random table!" << std::endl;
+    //     size = 100;
+    //     max = size + 1000000;
+    // }
+
+    std::cout << "n is " << n << " and size is " << size << " and max is " << max << std::endl;
     if (n > max)
         THROW((iskey ? "Key" : "Value") << " (" << n << ") too large for size (" << size << ")");
     /* Setup the buffer, defaulting to zero filled. */
     workgen_u64_to_string_zf(n, result, size);
+    std::cout << "result len is " << strlen(result) << std::endl;
 
     /*
      * Compressibility is a percentage, 100 is all zeroes, it applies to the proportion of the value
@@ -1651,11 +1746,13 @@ Operation::kv_gen(
              */
             result[i] = alphanum[runner->random_value() % (sizeof(alphanum) - 1)];
     }
+    std::cout << "kv_gen end" << std::endl;
 }
 
 void
 Operation::size_check() const
 {
+    // if (is_table_op() && !_random_table) {
     if (is_table_op()) {
         if (_key._size == 0 && _table.options.key_size == 0)
             THROW("operation requires a key size");
@@ -1746,8 +1843,10 @@ void
 TableOperationInternal::parse_config(const std::string &config)
 {
     if (!config.empty()) {
-        if (config == "reopen")
+        if (config == "reopen") {
+            std::cout << "Flag is reopen!" << std::endl;
             _flags |= WORKGEN_OP_REOPEN;
+        }
         else
             THROW("table operation has illegal config: \"" << config << "\"");
     }
@@ -2360,9 +2459,13 @@ WorkloadRunner::run(WT_CONNECTION *conn)
     }
 
     WT_ERR(create_all(conn, _workload->_context));
+    std::cout << "1" << std::endl;
     WT_ERR(open_all());
+    std::cout << "2" << std::endl;
     WT_ERR(ThreadRunner::cross_check(_trunners));
+    std::cout << "3" << std::endl;
     WT_ERR(run_all(conn));
+    std::cout << "4" << std::endl;
 err:
     // TODO: (void)close_all();
     _report_out = &std::cout;
