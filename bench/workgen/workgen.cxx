@@ -852,9 +852,9 @@ ThreadRunner::op_create_all(Operation *op, size_t &keysize, size_t &valuesize)
         //     std::cout << kv.first << ":" << kv.second << std::endl;
         // }
 
-        op->kv_compute_max(true, false);
+        op->kv_compute_max(this, true, op->_random_kv);
         if (OP_HAS_VALUE(op))
-            op->kv_compute_max(false, op->_table.options.random_value);
+            op->kv_compute_max(this, false, op->_random_table ? op->_random_kv : op->_table.options.random_value);
         if (op->_key._keytype == Key::KEYGEN_PARETO && op->_key._pareto.param == 0)
             THROW("Key._pareto value must be set if KEYGEN_PARETO specified");
         op->kv_size_buffer(true, keysize);
@@ -1098,6 +1098,7 @@ ThreadRunner::op_run(Operation *op)
                 compressibility =
                   op->_table.options.random_value ? 0 : op->_table.options.value_compressibility;
             op->kv_gen(this, false, compressibility, recno, _valuebuf);
+        std::cout << "value buf is " << _valuebuf << std::endl;
             const std::string value_format(cursor->value_format);
             if (value_format == "S") {
                 cursor->set_value(cursor, _valuebuf);
@@ -1421,6 +1422,16 @@ Operation::Operation(OpType optype, Table table, Key key, Value value)
     size_check();
 }
 
+Operation::Operation(OpType optype)
+    : _optype(optype), _internal(nullptr), _table(), _key(), _value(), _config(),
+      transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0), _random_table(true)
+{
+    ASSERT(is_table_op());
+    std::cout << "Inside constructor of operation on random tables with no key/value" << std::endl;
+    init_internal(nullptr);
+    _random_kv = true;
+}
+
 Operation::Operation(OpType optype, Key key, Value value)
     : _optype(optype), _internal(nullptr), _table(), _key(key), _value(value), _config(),
       transaction(nullptr), _group(nullptr), _repeatgroup(0), _timed(0.0), _random_table(true)
@@ -1460,7 +1471,7 @@ Operation::Operation(const Operation &other)
     : _optype(other._optype), _internal(nullptr), _table(other._table), _key(other._key),
       _value(other._value), _config(other._config), transaction(other.transaction),
       _group(other._group), _repeatgroup(other._repeatgroup), _timed(other._timed),
-      _random_table(other._random_table)
+      _random_table(other._random_table), _random_kv(other._random_kv)
 {
     // Creation and destruction of _group and transaction is managed
     // by Python.
@@ -1492,6 +1503,8 @@ Operation::operator=(const Operation &other)
     _group = other._group;
     _repeatgroup = other._repeatgroup;
     _timed = other._timed;
+    _random_table = other._random_table;
+    _random_kv = other._random_kv;
     delete _internal;
     _internal = nullptr;
     init_internal(other._internal);
@@ -1632,7 +1645,7 @@ Operation::is_table_op() const
 }
 
 void
-Operation::kv_compute_max(bool iskey, bool has_random)
+Operation::kv_compute_max(ThreadRunner* runner, bool iskey, bool has_random)
 {
     ASSERT(is_table_op());
     TableOperationInternal *internal = static_cast<TableOperationInternal *>(_internal);
@@ -1648,7 +1661,16 @@ Operation::kv_compute_max(bool iskey, bool has_random)
     //         size = iskey ? _table.options.key_size : _table.options.value_size;
     //     }
     // }
-    int size = iskey ? _key._size : _value._size;
+    int size;
+    if(!_random_kv) {
+        std::cout << "Not a random key/value" << std::endl;
+        size = iskey ? _key._size : _value._size;
+    } else {
+        std::cout << "Need to generate random stuff here" << std::endl;
+        size = (runner->random_value() % 1000) + (iskey ? 2 : 1);
+    }
+    std::cout << "Size is " << size << std::endl;
+
     if (size == 0)
         size = iskey ? _table.options.key_size : _table.options.value_size;
     std::cout << "Size is " << size << std::endl;
@@ -1657,8 +1679,8 @@ Operation::kv_compute_max(bool iskey, bool has_random)
         THROW("Key.size too small for table '" << _table._uri << "'");
     if (!iskey && size < 1)
         THROW("Value.size too small for table '" << _table._uri << "'");
-    if (has_random) {
-        if (iskey)
+    std::cout << "has_random? " << has_random << std::endl;
+    if (!_random_kv && has_random && iskey) {
             THROW("Random keys not allowed");
     }
 
@@ -1753,10 +1775,10 @@ void
 Operation::size_check() const
 {
     // if (is_table_op() && !_random_table) {
-    if (is_table_op()) {
-        if (_key._size == 0 && _table.options.key_size == 0)
+    if (is_table_op() && !_random_kv) {
+        if (_key._size == 0 && !_random_table && _table.options.key_size == 0)
             THROW("operation requires a key size");
-        if (OP_HAS_VALUE(this) && _value._size == 0 && _table.options.value_size == 0)
+        if (OP_HAS_VALUE(this) && _value._size == 0 && !_random_table && _table.options.value_size == 0)
             THROW("operation requires a value size");
     }
 }

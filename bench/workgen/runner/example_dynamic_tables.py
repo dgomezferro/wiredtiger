@@ -92,9 +92,9 @@ table_config = 'key_format=S,value_format=S'
 # tables.append(table_name)
 
 # Work on the table for some time.
-# ops = Operation(Operation.OP_INSERT)
+ops = Operation(Operation.OP_INSERT)
 # ops = Operation(Operation.OP_INSERT, Table(table_name), Key(Key.KEYGEN_APPEND, 10), Value(40))
-ops = Operation(Operation.OP_INSERT, Key(Key.KEYGEN_APPEND, 10), Value(40))
+# ops = Operation(Operation.OP_INSERT, Key(Key.KEYGEN_APPEND, 10), Value(40))
 ops._config = 'reopen'
 thread = Thread(ops)
 workload = Workload(context, thread)
@@ -106,7 +106,7 @@ workload_thread.start()
 
 # Create tables while the workload is running.
 while workload_thread.is_alive():
-    # create(session, workload, table_config)
+    create(session, workload, table_config)
     time.sleep(1)
 
 assert workload_thread.join() == 0
