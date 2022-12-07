@@ -36,6 +36,7 @@
 #define __STDC_FORMAT_MACROS
 #endif
 
+#include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <fstream>
@@ -416,8 +417,8 @@ Context::operator=(const Context &other)
 
 ContextInternal::ContextInternal()
     : _tint(), _table_names(), _table_runtime(nullptr), _runtime_alloced(0), _tint_last(0),
-      _dyn_tint(), _dyn_table_names(), _dyn_table_runtime(), _dyn_tint_last(0), _context_count(0),
-      _dyn_mutex(new std::mutex())
+      _dyn_tint(), _dyn_table_names(), _dyn_table_in_use(), _dyn_table_runtime(), _dyn_tint_last(0),
+      _context_count(0), _dyn_mutex(new std::mutex())
 {
     uint32_t count = workgen_atomic_add32(&context_count, 1);
     if (count != 1)
@@ -986,14 +987,38 @@ ThreadRunner::op_run(Operation *op)
 
     // Find a table to operate on.
     if (op->_random_table) {
+        std::cout << "Random table!" << std::endl;
         const std::lock_guard<std::mutex> lock(*_icontext->_dyn_mutex);
         size_t num_tables = _icontext->_dyn_table_names.size();
 
-        if (num_tables == 0)
+        if (num_tables == 0) {
+            // sleep(1);
             goto err;
+        }
 
-        tint = (random_value() % num_tables);
-        table_uri = _icontext->_dyn_table_names.at(tint);
+        // tint = (random_value() % num_tables);
+        // std::cout << "Selected tint is " << tint << std::endl;
+        // const std::string uri(_icontext->_dyn_table_names.at(tint));
+        auto it = _icontext->_dyn_tint.begin();
+        std::advance(it, random_value() % _icontext->_dyn_tint.size());
+        const std::string uri(it->first);
+        std::cout << "Random selected uri is " << uri << std::endl;
+
+        // Make sure the table is not marked for deletion.
+        bool marked_deleted =
+          std::find(_icontext->_dyn_tables_delete.begin(), _icontext->_dyn_tables_delete.end(),
+            uri) != _icontext->_dyn_tables_delete.end();
+        if (marked_deleted) {
+            std::cout << "The table " << uri << " is marked for deletion!" << std::endl;
+            // sleep(1);
+            goto err;
+        } else {
+            // Increment the reference counter.
+            ++_icontext->_dyn_table_in_use[uri];
+            std::cout << "Inc: use of " << uri << " is " << _icontext->_dyn_table_in_use[uri]
+                      << std::endl;
+            table_uri = uri;
+        }
     } else {
         tint = op->_table._internal->_tint;
         table_uri = op->_table._uri;
@@ -1216,6 +1241,16 @@ err:
             }
         }
         _in_transaction = false;
+    }
+
+    // For operations on random tables, if a table has been selected, decrement the reference
+    // counter.
+    if (op->_random_table && !table_uri.empty()) {
+        const std::lock_guard<std::mutex> lock(*_icontext->_dyn_mutex);
+        --_icontext->_dyn_table_in_use[table_uri];
+        std::cout << "Dec: use of " << table_uri << " is "
+                  << _icontext->_dyn_table_in_use[table_uri] << std::endl;
+        // sleep(1);
     }
     return (ret);
 }
@@ -2356,11 +2391,55 @@ Workload::create_table(const std::string &uri)
     runner.create_table(uri);
 }
 
+void
+Workload::drop_table(const std::string &uri)
+{
+    WorkloadRunner runner(this);
+    runner.drop_table(uri);
+}
+
 WorkloadRunner::WorkloadRunner(Workload *workload)
     : _workload(workload), _trunners(workload->_threads.size()), _report_out(&std::cout), _start(),
       stopping(false)
 {
     ts_clear(_start);
+}
+
+const std::vector<std::string>
+Workload::garbage_collection(WT_SESSION *session)
+{
+    std::cout << "Inside garbage_collection" << std::endl;
+    ContextInternal *icontext = _context->_internal;
+    const std::lock_guard<std::mutex> lock(*icontext->_dyn_mutex);
+
+    std::vector<std::string> uris;
+    for (size_t i = 0; i != icontext->_dyn_tables_delete.size();) {
+        // The table might still be in use.
+        const std::string uri(icontext->_dyn_tables_delete.at(i));
+        if (icontext->_dyn_table_in_use[uri] != 0) {
+            std::cout << "The table " << uri << " is still being used..." << std::endl;
+            ++i;
+            continue;
+        }
+
+        // std::cout << "Trying to drop " << uri << std::endl;
+        // int ret = session->drop(session, uri.c_str(), nullptr);
+        // std::cout << "ret drop " << ret << std::endl;
+        // ASSERT(ret == 0 || ret == EBUSY);
+        // if (ret == EBUSY) {
+        //     ++i;
+        //     continue;
+        // }
+        icontext->_dyn_table_in_use.erase(uri);
+        icontext->_dyn_tables_delete.erase(icontext->_dyn_tables_delete.begin() + i);
+        tint_t tint = icontext->_dyn_tint.at(uri);
+        icontext->_dyn_tint.erase(uri);
+        icontext->_dyn_table_names.erase(tint);
+        // TODO - _dyn_table_runtime?
+        std::cout << "Garbage collection: deleted data related to " << uri << std::endl;
+        uris.push_back(uri);
+    }
+    return uris;
 }
 
 const std::vector<std::string>
@@ -2400,6 +2479,36 @@ WorkloadRunner::create_table(const std::string &uri)
     icontext->_dyn_table_runtime.push_back(TableRuntime());
 
     ++icontext->_dyn_tint_last;
+}
+
+void
+WorkloadRunner::drop_table(const std::string &uri)
+{
+    std::cout << "Inside delete table" << std::endl;
+    ContextInternal *icontext = _workload->_context->_internal;
+
+    if (icontext->_tint.count(uri) > 0) {
+        const std::string err_msg(
+          "The table " + uri + " cannot be deleted, it is part of the static set.");
+        THROW(err_msg);
+    }
+
+    const std::lock_guard<std::mutex> lock(*icontext->_dyn_mutex);
+
+    if (icontext->_dyn_tint.count(uri) == 0) {
+        const std::string err_msg("The table " + uri + " does not exist.");
+        THROW(err_msg);
+    }
+
+    // Mark the table for deletion.
+    bool found = std::find(icontext->_dyn_tables_delete.begin(), icontext->_dyn_tables_delete.end(),
+                   uri) != icontext->_dyn_tables_delete.end();
+    if (!found) {
+        std::cout << "The table " << uri << " has been marked for deletion" << std::endl;
+        icontext->_dyn_tables_delete.push_back(uri);
+    } else {
+        std::cout << "The table " << uri << " has already been marked for deletion." << std::endl;
+    }
 }
 
 int

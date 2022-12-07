@@ -56,6 +56,19 @@ def generate_random_string(length):
     str = ''.join(random.choice(characters) for _ in range(length))
     return str
 
+def drop(workload, table_name):
+    global tables
+
+    try:
+        print("Python deleting", table_name)
+        workload.drop_table(table_name)
+        print("Need to remove in Python. Existing tables:", tables)
+        tables.remove(table_name)
+        print("Updates Python tables:", tables)
+    except RuntimeError as e:
+        print(str(e))
+        assert "it is part of the static set" in str(e).lower()
+
 def create(session, workload, table_config):
     global tables
 
@@ -63,7 +76,7 @@ def create(session, workload, table_config):
     name_length = 10
     table_name = "table:" + generate_random_string(name_length)
     try:
-        session.create(table_name, table_config)
+        assert session.create(table_name, table_config) == 0
         # This indicates Workgen a new table exists.
         workload.create_table(table_name)
         tables.append(table_name)
@@ -93,22 +106,55 @@ thread = Thread(op)
 
 # Create operations that work on random tables.
 op_ins_rnd = Operation(Operation.OP_INSERT, key, value)
-op_upd_rnd = Operation(Operation.OP_UPDATE, key, value)
-op_read_rnd = Operation(Operation.OP_SEARCH, key, value)
-thread_ins_rnd = Thread(op_ins_rnd * 10)
-thread_upd_rnd = Thread(op_upd_rnd * 10)
-thread_read_rnd = Thread(op_read_rnd * 10)
+# op_upd_rnd = Operation(Operation.OP_UPDATE, key, value)
+# op_read_rnd = Operation(Operation.OP_SEARCH, key, value)
+thread_ins_rnd = Thread(op_ins_rnd * 1)
+# thread_upd_rnd = Thread(op_upd_rnd * 10)
+# thread_read_rnd = Thread(op_read_rnd * 10)
 
-workload = Workload(context, thread + thread_ins_rnd + thread_upd_rnd + thread_read_rnd)
+workload = Workload(context, thread + thread_ins_rnd)
+#  + thread_upd_rnd + thread_read_rnd)
 workload.options.run_time = 10
 
 # Start the workload.
 workload_thread = ThreadWithReturnValue(target=workload.run, args=([connection]))
 workload_thread.start()
 
-# Create tables while the workload is running.
+# Create and drop tables while the workload is running.
+tables_to_delete = []
 while workload_thread.is_alive():
     create(session, workload, table_config)
+
+    # Select a random table to drop.
+    if len(tables):
+        idx = random.randint(0, len(tables) - 1)
+        print(tables, idx)
+        uri = tables[idx]
+        drop(workload, uri)
+
+    # A table may have been still in use when marked for deletion. Check again to finish the job. 
+    tables_to_delete += workload.garbage_collection(session)
+    print("After calling garbage collection", tables_to_delete)
+    deleted_tables = []
+    for t in tables_to_delete:
+        print("Garbage:", t)
+        print("WiredTiger removing", t)
+
+        try:
+            session.drop(t)
+            deleted_tables.append(t)
+        # Collision may occur.
+        except WiredTigerError as e:
+            print("Could not WT delete", t)
+            assert "device or resource busy" in str(e).lower()
+
+        #
+        print("Deleted tables are", deleted_tables)
+        for t in deleted_tables:
+            print("Need to remove in Python. Existing tables to delete:", tables_to_delete)
+            tables_to_delete.remove(t)
+            print("Updates Python tables to delete:", tables_to_delete)
+
     time.sleep(1)
 
 assert workload_thread.join() == 0

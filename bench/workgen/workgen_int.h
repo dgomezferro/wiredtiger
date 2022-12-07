@@ -212,6 +212,11 @@ struct ContextInternal {
     std::map<tint_t, std::string> _dyn_table_names;
     std::vector<TableRuntime> _dyn_table_runtime;
     tint_t _dyn_tint_last;
+    // When a thread is working on a table, a counter is incremented. After a thread is done with a
+    // table, the counter is decremented.
+    std::map<std::string, size_t> _dyn_table_in_use;
+    // When a table is requested to be deleted, it is added here.
+    std::vector<std::string> _dyn_tables_delete;
     // This mutex should be used to protect the access to the dynamic tables data.
     std::mutex* _dyn_mutex;
 
@@ -298,6 +303,7 @@ struct WorkloadRunner {
     WorkloadRunner(Workload *);
     ~WorkloadRunner() = default;
     void create_table(const std::string& uri);
+    void drop_table(const std::string& uri);
     int run(WT_CONNECTION *conn);
     int increment_timestamp(WT_CONNECTION *conn);
     int start_table_idle_cycle(WT_CONNECTION *conn);
