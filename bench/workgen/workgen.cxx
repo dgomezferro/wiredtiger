@@ -2266,16 +2266,23 @@ WorkloadOptions::WorkloadOptions()
       warmup(0), oldest_timestamp_lag(0.0), stable_timestamp_lag(0.0), timestamp_advance(0.0),
       max_idle_table_cycle_fatal(false), _options()
 {
+    _options.add_int("max_idle_table_cycle", max_idle_table_cycle,
+      "maximum number of seconds a create or drop is allowed before aborting "
+      "or printing a warning based on max_idle_table_cycle_fatal setting.");
+    _options.add_bool("max_idle_table_cycle_fatal", max_idle_table_cycle_fatal,
+      "print warning (false) or abort (true) of max_idle_table_cycle failure");
     _options.add_int("max_latency", max_latency,
       "prints warning if any latency measured exceeds this number of "
       "milliseconds. Requires sample_interval to be configured.");
-    _options.add_int("report_interval", report_interval,
-      "output throughput information every interval seconds, 0 to disable");
+    _options.add_double("oldest_timestamp_lag", oldest_timestamp_lag,
+      "how much lag to the oldest timestamp from epoch time");
     _options.add_string("report_file", report_file,
       "file name for collecting run output, "
       "including output from the report_interval option. "
       "The file name is relative to the connection's home directory. "
       "When set to the empty string, stdout is used.");
+    _options.add_int("report_interval", report_interval,
+      "output throughput information every interval seconds, 0 to disable");
     _options.add_int("run_time", run_time, "total workload seconds");
     _options.add_string("sample_file", sample_file,
       "file name for collecting latency output in a JSON-like format, "
@@ -2284,23 +2291,16 @@ WorkloadOptions::WorkloadOptions()
       "When set to the empty string, no JSON is emitted.");
     _options.add_int("sample_interval_ms", sample_interval_ms,
       "performance logging every interval milliseconds, 0 to disable");
-    _options.add_int("max_idle_table_cycle", max_idle_table_cycle,
-      "maximum number of seconds a create or drop is allowed before aborting "
-      "or printing a warning based on max_idle_table_cycle_fatal setting.");
     _options.add_int("sample_rate", sample_rate,
       "how often the latency of operations is measured. 1 for every operation, "
       "2 for every second operation, 3 for every third operation etc.");
     _options.add_int(
       "warmup", warmup, "how long to run the workload phase before starting measurements");
-    _options.add_double("oldest_timestamp_lag", oldest_timestamp_lag,
-      "how much lag to the oldest timestamp from epoch time");
     _options.add_double("stable_timestamp_lag", stable_timestamp_lag,
       "how much lag to the oldest timestamp from epoch time");
     _options.add_double("timestamp_advance", timestamp_advance,
       "how many seconds to wait before moving oldest and stable"
       "timestamp forward");
-    _options.add_bool("max_idle_table_cycle_fatal", max_idle_table_cycle_fatal,
-      "print warning (false) or abort (true) of max_idle_table_cycle failure");
 }
 
 WorkloadOptions::WorkloadOptions(const WorkloadOptions &other)
