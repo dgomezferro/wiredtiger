@@ -100,7 +100,7 @@ thread_upd_rnd = Thread(op_upd_rnd * 10)
 thread_read_rnd = Thread(op_read_rnd * 10)
 
 workload = Workload(context, thread + thread_ins_rnd + thread_upd_rnd + thread_read_rnd)
-workload.options.run_time = 10
+workload.options.run_infinite = True
 
 # Start the workload.
 workload_thread = ThreadWithReturnValue(target=workload.run, args=([connection]))
