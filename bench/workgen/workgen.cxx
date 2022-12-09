@@ -2566,7 +2566,7 @@ WorkloadRunner::run_all(WT_CONNECTION *conn)
         pthread_t thandle;
         ThreadRunner *runner = &_trunners[i];
         runner->_stop = false;
-        runner->_repeat = (options->run_time != 0);
+        runner->_repeat = (options->run_infinite || (options->run_time != 0));
         if ((ret = pthread_create(&thandle, nullptr, thread_runner_main, runner)) != 0) {
             std::cerr << "pthread_create failed err=" << ret << std::endl;
             std::cerr << "Stopping all threads." << std::endl;
@@ -2642,7 +2642,7 @@ WorkloadRunner::run_all(WT_CONNECTION *conn)
         // Let the test run, reporting as needed.
         Stats curstats(false);
         now = _start;
-        while (now < end) {
+        while (options->run_infinite || (now < end)) {
             timespec sleep_amt;
 
             sleep_amt = end - now;
@@ -2665,8 +2665,8 @@ WorkloadRunner::run_all(WT_CONNECTION *conn)
         }
     }
 
-    // signal all threads to stop.
-    if (options->run_time != 0)
+    // Signal all threads to stop.
+    if (!options->run_infinite || options->run_time != 0)
         for (size_t i = 0; i < _trunners.size(); i++)
             _trunners[i]._stop = true;
     if (options->sample_interval_ms > 0)
