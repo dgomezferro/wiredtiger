@@ -31,12 +31,18 @@
 
 import threading as pythread
 import random
+import signal
 import string
 import time
 
 from runner import *
 from wiredtiger import *
 from workgen import *
+
+def signal_handler(signum, frame):
+    signame = signal.Signals(signum).name
+    assert signal.Signals(signum) == signal.SIGTERM
+    workload.options.run_infinite = False
 
 class ThreadWithReturnValue(pythread.Thread):
     def __init__(self, group=None, target=None, name=None, args=(), kwargs={}):
@@ -70,6 +76,8 @@ def create(session, workload, table_config):
     # Collision may occur.
     except RuntimeError as e:
         assert "already exists" in str(e).lower()
+
+signal.signal(signal.SIGTERM, signal_handler)
 
 context = Context()
 connection = context.wiredtiger_open("create")
@@ -107,8 +115,14 @@ workload_thread = ThreadWithReturnValue(target=workload.run, args=([connection])
 workload_thread.start()
 
 # Create tables while the workload is running.
+running_time = 10
+i = 0
 while workload_thread.is_alive():
     create(session, workload, table_config)
+    i = i + 1
+    if(i >= running_time):
+        # Simulate a SIGTERM that would stop the infinite workload.
+        signal.raise_signal(signal.SIGTERM)
     time.sleep(1)
 
 assert workload_thread.join() == 0
