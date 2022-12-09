@@ -2675,7 +2675,7 @@ WorkloadRunner::run_all(WT_CONNECTION *conn)
     // Signal timestamp and idle table cycle thread to stop.
     stopping = true;
 
-    // wait for all threads
+    // Wait for all threads.
     WorkgenException *exception = nullptr;
     for (size_t i = 0; i < _trunners.size(); i++) {
         WT_TRET(pthread_join(thread_handles[i], &status));
@@ -2687,7 +2687,7 @@ WorkloadRunner::run_all(WT_CONNECTION *conn)
             exception = &_trunners[i]._exception;
     }
 
-    // Wait for the time increment thread
+    // Wait for the time increment thread.
     if (runnerConnection != nullptr) {
         WT_TRET(pthread_join(time_thandle, &status));
         delete runnerConnection;
@@ -2712,7 +2712,7 @@ WorkloadRunner::run_all(WT_CONNECTION *conn)
             monitor_json.close();
     }
 
-    // issue the final report
+    // Issue the final report.
     timespec finalsecs = now - _start;
     final_report(finalsecs);
 
