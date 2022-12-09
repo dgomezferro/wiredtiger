@@ -2261,10 +2261,10 @@ TableInternal::TableInternal(const TableInternal &other)
 }
 
 WorkloadOptions::WorkloadOptions()
-    : max_latency(0), report_file("workload.stat"), report_interval(0), run_time(0),
-      sample_file("monitor.json"), sample_interval_ms(0), max_idle_table_cycle(0), sample_rate(1),
-      warmup(0), oldest_timestamp_lag(0.0), stable_timestamp_lag(0.0), timestamp_advance(0.0),
-      max_idle_table_cycle_fatal(false), _options()
+    : max_latency(0), report_file("workload.stat"), report_interval(0), run_infinite(false),
+      run_time(0), sample_file("monitor.json"), sample_interval_ms(0), max_idle_table_cycle(0),
+      sample_rate(1), warmup(0), oldest_timestamp_lag(0.0), stable_timestamp_lag(0.0),
+      timestamp_advance(0.0), max_idle_table_cycle_fatal(false), _options()
 {
     _options.add_int("max_idle_table_cycle", max_idle_table_cycle,
       "maximum number of seconds a create or drop is allowed before aborting "
@@ -2283,6 +2283,7 @@ WorkloadOptions::WorkloadOptions()
       "When set to the empty string, stdout is used.");
     _options.add_int("report_interval", report_interval,
       "output throughput information every interval seconds, 0 to disable");
+    _options.add_bool("run_infinite", run_infinite, "run the workload indefinitely");
     _options.add_int("run_time", run_time, "total workload seconds");
     _options.add_string("sample_file", sample_file,
       "file name for collecting latency output in a JSON-like format, "
@@ -2305,8 +2306,9 @@ WorkloadOptions::WorkloadOptions()
 
 WorkloadOptions::WorkloadOptions(const WorkloadOptions &other)
     : max_latency(other.max_latency), report_interval(other.report_interval),
-      run_time(other.run_time), sample_interval_ms(other.sample_interval_ms),
-      sample_rate(other.sample_rate), _options(other._options)
+      run_infinite(other.run_infinite), run_time(other.run_time),
+      sample_interval_ms(other.sample_interval_ms), sample_rate(other.sample_rate),
+      _options(other._options)
 {
 }
 

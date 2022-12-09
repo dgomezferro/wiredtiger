@@ -437,6 +437,7 @@ struct WorkloadOptions {
     int max_latency;
     std::string report_file;
     int report_interval;
+    int run_infinite;
     int run_time;
     int sample_interval_ms;
     int sample_rate;
@@ -452,9 +453,12 @@ struct WorkloadOptions {
     WorkloadOptions(const WorkloadOptions &other);
     ~WorkloadOptions() = default;
 
-    void describe(std::ostream &os) const {
-	os << "run_time " << run_time;
-	os << ", report_interval " << report_interval;
+    void
+    describe(std::ostream &os) const
+    {
+        os << "run_infinite " << run_infinite;
+        os << ", run_time " << run_time;
+        os << ", report_interval " << report_interval;
     }
 
     std::string help() const { return _options.help(); }
