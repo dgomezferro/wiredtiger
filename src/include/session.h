@@ -5,6 +5,8 @@
  *
  * See the file LICENSE for redistribution information.
  */
+ #include <sys/types.h>
+ #include <stdint.h>
 
 /*
  * WT_DATA_HANDLE_CACHE --
@@ -52,6 +54,30 @@ typedef TAILQ_HEAD(__wt_cursor_list, __wt_cursor) WT_CURSOR_LIST;
 
 /* Maximum number of buckets to visit during a regular cursor sweep. */
 #define WT_SESSION_CURSOR_SWEEP_MAX 64
+
+// 8 MB per thread
+#define WT_MAX_THREAD_LOG (1<<20) 
+#define ADD_LOG(loc, d)                         \
+do {                                            \
+    log->data[log->counter] = (intptr_t)(d);    \
+    log->location[log->counter] = (short)(loc); \
+    log->counter++;                             \
+    if(log->counter >= WT_MAX_THREAD_LOG)       \
+        log->counter = 1;                       \
+} while(0)
+
+struct __wt_thread_log {
+    int initialized;
+    pid_t thread_id;
+    int counter;
+    struct __wt_thread_log* next;
+    short location[WT_MAX_THREAD_LOG];
+    intptr_t data[WT_MAX_THREAD_LOG];
+};
+
+typedef struct __wt_thread_log WT_THREAD_LOG; 
+
+__thread WT_THREAD_LOG * log;
 
 /*
  * WT_SESSION_IMPL --
@@ -271,6 +297,8 @@ struct __wt_session_impl {
      * the same values for skiplist depth when the application isn't caching sessions.
      */
     WT_RAND_STATE rnd; /* Random number generation state */
+
+    WT_THREAD_LOG* thread_log;
 
     /*
      * Hash tables are allocated lazily as sessions are used to keep the size of this structure from

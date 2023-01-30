@@ -2511,6 +2511,14 @@ __open_session(WT_CONNECTION_IMPL *conn, WT_EVENT_HANDLER *event_handler, const 
     if (WT_SESSION_FIRST_USE(session_ret))
         __wt_random_init(&session_ret->rnd);
 
+    if (session_ret->thread_log == NULL) {
+        WT_ERR(__wt_calloc_def(session, 1, &session_ret->thread_log));
+        __atomic_store_n(&session_ret->thread_log->next,
+            __atomic_exchange_n(&conn->thread_log_head, session_ret->thread_log, 
+                __ATOMIC_SEQ_CST), 
+            __ATOMIC_SEQ_CST);
+    }
+
     __wt_event_handler_set(
       session_ret, event_handler == NULL ? session->event_handler : event_handler);
 

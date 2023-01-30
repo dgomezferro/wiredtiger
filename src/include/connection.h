@@ -234,6 +234,27 @@ struct __wt_backup_target {
 };
 typedef TAILQ_HEAD(__wt_backuphash, __wt_backup_target) WT_BACKUPHASH;
 
+#define WT_MAX_THREAD_LOG (1<<20) 
+#define ADD_LOG(loc, d)                         \
+do {                                            \
+    log->data[log->counter] = (intptr_t)(d);    \
+    log->location[log->counter] = (short)(loc); \
+    log->counter++;                             \
+    if(log->counter >= WT_MAX_THREAD_LOG)       \
+        log->counter = 1;                       \
+} while(0)
+
+struct __wt_thread_log {
+    int initialized;
+    pid_t thread_id;
+    int counter;
+    struct __wt_thread_log* next;
+    short location[WT_MAX_THREAD_LOG];
+    intptr_t data[WT_MAX_THREAD_LOG];
+};
+
+typedef struct __wt_thread_log WT_THREAD_LOG; 
+
 /*
  * WT_CONNECTION_IMPL --
  *	Implementation of WT_CONNECTION
@@ -246,6 +267,8 @@ struct __wt_connection_impl {
     WT_SESSION_IMPL dummy_session;
 
     const char *cfg; /* Connection configuration */
+
+    WT_THREAD_LOG * thread_log_head;
 
     WT_SPINLOCK api_lock;        /* Connection API spinlock */
     WT_SPINLOCK checkpoint_lock; /* Checkpoint spinlock */
