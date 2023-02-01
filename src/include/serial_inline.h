@@ -17,6 +17,12 @@ __insert_simple_func(
     u_int i;
 
     WT_UNUSED(session);
+    
+    ADD_LOG(7000, new_ins);
+    ADD_LOG(7100, skipdepth);
+    for (i = 0; i < skipdepth; i++) {
+        ADD_LOG(7200, *ins_stack[i]);
+    }
 
     /*
      * Update the skiplist elements referencing the new WT_INSERT item. If we fail connecting one of
@@ -30,9 +36,12 @@ __insert_simple_func(
      */
     for (i = 0; i < skipdepth; i++) {
         WT_INSERT *old_ins = *ins_stack[i];
-        if (old_ins != new_ins->next[i] || !__wt_atomic_cas_ptr(ins_stack[i], old_ins, new_ins))
+        if (old_ins != new_ins->next[i] || !__wt_atomic_cas_ptr(ins_stack[i], old_ins, new_ins)) {
+            ADD_LOG(7300, i);
             return (i == 0 ? WT_RESTART : 0);
+        }
     }
+    ADD_LOG(7400, 0);
 
     return (0);
 }
@@ -50,6 +59,13 @@ __insert_serial_func(WT_SESSION_IMPL *session, WT_INSERT_HEAD *ins_head, WT_INSE
     /* The cursor should be positioned. */
     WT_ASSERT(session, ins_stack[0] != NULL);
 
+    
+    ADD_LOG(5000, new_ins);
+    ADD_LOG(5100, skipdepth);
+    for (i = 0; i < skipdepth; i++) {
+        ADD_LOG(5200, *ins_stack[i]);
+    }
+
     /*
      * Update the skiplist elements referencing the new WT_INSERT item.
      *
@@ -64,11 +80,17 @@ __insert_serial_func(WT_SESSION_IMPL *session, WT_INSERT_HEAD *ins_head, WT_INSE
      */
     for (i = 0; i < skipdepth; i++) {
         WT_INSERT *old_ins = *ins_stack[i];
-        if (old_ins != new_ins->next[i] || !__wt_atomic_cas_ptr(ins_stack[i], old_ins, new_ins))
+        if (old_ins != new_ins->next[i] || !__wt_atomic_cas_ptr(ins_stack[i], old_ins, new_ins)) {
+            ADD_LOG(5300, i);
             return (i == 0 ? WT_RESTART : 0);
-        if (ins_head->tail[i] == NULL || ins_stack[i] == &ins_head->tail[i]->next[i])
+        }
+        if (ins_head->tail[i] == NULL || ins_stack[i] == &ins_head->tail[i]->next[i]) {
             ins_head->tail[i] = new_ins;
+            ADD_LOG(5400, i);
+            ADD_LOG(5500, new_ins);
+        }
     }
+    ADD_LOG(5600, 0);
 
     return (0);
 }

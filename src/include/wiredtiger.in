@@ -78,6 +78,7 @@ struct __wt_file_system;    typedef struct __wt_file_system WT_FILE_SYSTEM;
 struct __wt_item;	    typedef struct __wt_item WT_ITEM;
 struct __wt_modify;	    typedef struct __wt_modify WT_MODIFY;
 struct __wt_session;	    typedef struct __wt_session WT_SESSION;
+struct __wt_thread_log; 	typedef struct __wt_thread_log WT_THREAD_LOG; 
 #if !defined(DOXYGEN)
 struct __wt_storage_source; typedef struct __wt_storage_source WT_STORAGE_SOURCE;
 #endif
