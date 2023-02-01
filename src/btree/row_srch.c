@@ -92,11 +92,13 @@ __wt_search_insert(
     WT_INSERT *ins, **insp, *last_ins;
     WT_ITEM key;
     size_t match, skiphigh, skiplow;
-    int cmp, i;
+    int cmp, cmp2, i;
 
     btree = S2BT(session);
     collator = btree->collator;
     cmp = 0; /* -Wuninitialized */
+
+    ADD_LOG(0x100);
 
     /*
      * The insert list is a skip list: start at the highest skip level, then go as far as possible
@@ -106,11 +108,12 @@ __wt_search_insert(
     ins = last_ins = NULL;
     for (i = WT_SKIP_MAXDEPTH - 1, insp = &ins_head->head[i]; i >= 0;) {
         if ((ins = *insp) == NULL) {
-            ADD_LOG(300, ins);
+            ADD_LOG(ins);
             cbt->next_stack[i] = NULL;
             cbt->ins_stack[i--] = insp--;
             continue;
         }
+        ADD_LOG(ins);
 
         /*
          * Comparisons may be repeated as we drop down skiplist levels; don't repeat comparisons,
@@ -118,12 +121,10 @@ __wt_search_insert(
          */
         if (ins != last_ins) {
             last_ins = ins;
-            ADD_LOG(500, ins);
             key.data = WT_INSERT_KEY(ins);
             key.size = WT_INSERT_KEY_SIZE(ins);
             match = WT_MIN(skiplow, skiphigh);
             WT_RET(__wt_compare_skip(session, collator, srch_key, &key, &cmp, &match));
-            ADD_LOG(600, match);
         }
 
         if (cmp > 0) { /* Keep going at this level */
@@ -131,9 +132,14 @@ __wt_search_insert(
             skiplow = match;
         } else if (cmp < 0) { /* Drop down a level */
             cbt->next_stack[i] = ins;
+            if (i == 0 && cbt->next_stack[i] != NULL) {
+                key.data = WT_INSERT_KEY(cbt->next_stack[i]);
+                key.size = WT_INSERT_KEY_SIZE(cbt->next_stack[i]);
+                WT_RET(__wt_compare(session, collator, srch_key, &key, &cmp2));
+                WT_ASSERT(session, cmp2 < 0);
+            }
             cbt->ins_stack[i--] = insp--;
             skiphigh = match;
-            ADD_LOG(1200, skiphigh);
         } else
             for (; i >= 0; i--) {
                 cbt->next_stack[i] = ins->next[i];
@@ -147,11 +153,8 @@ __wt_search_insert(
      * one: that is used to decide whether we are positioned in a skiplist.
      */
     cbt->compare = -cmp;
-    // ADD_LOG(1700, cbt->compare);
     cbt->ins = (ins != NULL) ? ins : last_ins;
-    ADD_LOG(1800, cbt->ins);
     cbt->ins_head = ins_head;
-    ADD_LOG(1900, cbt->ins_head);
     return (0);
 }
 

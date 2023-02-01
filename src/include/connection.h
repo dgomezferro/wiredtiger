@@ -236,10 +236,9 @@ typedef TAILQ_HEAD(__wt_backuphash, __wt_backup_target) WT_BACKUPHASH;
 
 // 8 MB per thread
 #define WT_MAX_THREAD_LOG (1<<20) 
-#define ADD_LOG(loc, d)                         \
+#define ADD_LOG(d)                         \
 do {                                            \
     session->thread_log->data[session->thread_log->counter] = (intptr_t)(d);    \
-    session->thread_log->location[session->thread_log->counter] = (short)(loc); \
     session->thread_log->counter++;                             \
     if(session->thread_log->counter >= WT_MAX_THREAD_LOG)       \
         session->thread_log->counter = 1;                       \
