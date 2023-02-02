@@ -22,6 +22,7 @@ __insert_simple_func(
     ADD_LOG(new_ins);
     ADD_LOG(skipdepth);
     for (i = 0; i < skipdepth; i++) {
+        ADD_LOG(ins_stack[i]);
         ADD_LOG(*ins_stack[i]);
     }
 
@@ -66,6 +67,7 @@ __insert_serial_func(WT_SESSION_IMPL *session, WT_INSERT_HEAD *ins_head, WT_INSE
     ADD_LOG(new_ins);
     ADD_LOG(skipdepth);
     for (i = 0; i < skipdepth; i++) {
+        ADD_LOG(ins_stack[i]);
         ADD_LOG(*ins_stack[i]);
     }
 
